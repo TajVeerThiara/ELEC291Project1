@@ -1,6 +1,31 @@
 $MODLP52
-org 0000H
-   ljmp MainProgram
+
+CLK  EQU 22118400
+BAUD equ 115200
+T1LOAD equ (0x100-(CLK/(16*BAUD)))
+;timer constants
+TIMER0_RATE EQU 4096
+TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
+TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
+TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
+
+;timer pins
+BOOT_BUTTON   equ P4.5
+SOUND_OUT     equ P3.7
+UPDOWN        equ P0.0
+
+
+;SPI pins
+CE_ADC  EQU P2.0
+MY_MOSI EQU P2.1
+MY_MISO EQU P2.2
+MY_SCLK EQU P2.3
+
+; Reset vector
+org 0x0000
+    ljmp MainProgram
+
+; External interrupt 0 vector (not used in this code)
 org 0x0003
 	reti
 
@@ -23,50 +48,20 @@ org 0x0023
 ; Timer/Counter 2 overflow interrupt vector
 org 0x002B
 	ljmp Timer2_ISR
-	
-CLK  EQU 22118400
-BAUD equ 115200
-T1LOAD equ (0x100-(CLK/(16*BAUD)))
-VLED EQU 207
-TIMER0_RATE   EQU 4096     ; 2048Hz squarewave (peak amplitude of CEM-1203 speaker)
-TIMER0_RELOAD EQU ((65536-(CLK/TIMER0_RATE)))
-TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
-TIMER2_RELOAD EQU ((65536-(CLK/TIMER2_RATE)))
-TEMPERATURE EQU 20
 
-DSEG at 30H
-buffer: ds 30
-Result: ds 10
-x:   ds 4
-y:   ds 4
-checker: ds 4
-bcd: ds 5
-Vcc: ds 2
-Count1ms: ds 2
-beep_counter: ds 1
-repeat_beepcounter: ds 1
+; In the 8051 we can define direct access variables starting at location 0x30 up to location 0x7F
+dseg at 0x30
+Count1ms:     ds 2 ; Used to determine when half second has passed
+BCD_counter:  ds 1 ; The BCD counter incrememted in the ISR and displayed in the main loop
+sec: 		  ds 1 ;ds reserves a specific number of bits where the label is assigned to memory address
 
-BSEG
-mf: dbit 1
-initial_stage_beepflag: dbit 1
-soak_beepflag: dbit 1
-reflow_beepflag: dbit 1
-cooling_beepflag: dbit 1
-overheat_beepflag: dbit 1
-good_to_open_flag: dbit 1
-initial_stage_beepdone_flag: dbit 1
-soak_stage_beepdone_flag: dbit 1
-reflow_stage_beepdone_flag: dbit 1
-reflow_time_flag: dbit 1
-reflow_process_done_flag: dbit 1
-long_beep_done_flag: dbit 1
-cool_enough_flag: dbit 1
+; In the 8051 we have variables that are 1-bit in size.  We can use the setb, clr, jb, and jnb
+; instructions with these variables.  This is how you define a 1-bit variable:
+bseg
+half_seconds_flag: dbit 1 ; Set to one in the ISR every time 500 ms had passed
 
 CSEG
-CE_ADC EQU P2.0
-MY_MOSI EQU P2.1
-MY_MISO EQU P2.2
-MY_SCLK EQU P2.3
+; These 'equ' must match the wiring between the microcontroller and the LCD!
 LCD_RS equ P1.2
 LCD_RW equ P1.3
 LCD_E  equ P1.4
@@ -74,14 +69,18 @@ LCD_D4 equ P3.2
 LCD_D5 equ P3.3
 LCD_D6 equ P3.4
 LCD_D7 equ P3.5
-SOUND_OUT     equ P3.7
-BOOT_BUTTON   equ P4.5
 
 $NOLIST
-$include(LCD_4bit.inc)
 $include(math32.inc)
+$include(LCD_4bit.inc) ; A library of LCD related functions and utility macros
 $LIST
 
+;                     1234567890123456    <- This helps determine the location of the counter
+Initial_Message:  db 'Temperature', 0
+
+;-----------------------------;
+;Interrupts Timers	      ;
+;-----------------------------;
 Timer0_Init:
 	mov a, TMOD
 	anl a, #0xf0 ; Clear the bits for timer 0
@@ -93,7 +92,6 @@ Timer0_Init:
     setb ET0  ; Enable timer 0 interrupt
     setb TR0  ; Start timer 0
 	ret
-
 ;---------------------------------;
 ; ISR for timer 0.  Set to execute;
 ; every 1/4096Hz to generate a    ;
@@ -106,7 +104,7 @@ Timer0_ISR:
 	mov TH0, #high(TIMER0_RELOAD)
 	mov TL0, #low(TIMER0_RELOAD)
 	setb TR0
-	cpl SOUND_OUT
+	cpl SOUND_OUT ; Connect speaker to P3.7!
 	reti
 
 ;---------------------------------;
@@ -125,7 +123,7 @@ Timer2_Init:
     setb ET2  ; Enable timer 2 interrupt
     setb TR2  ; Enable timer 2
 	ret
-
+;
 ;---------------------------------;
 ; ISR for timer 2                 ;
 ;---------------------------------;
@@ -136,7 +134,7 @@ Timer2_ISR:
 	; The two registers used in the ISR must be saved in the stack
 	push acc
 	push psw
-	                                                                                                           
+	
 	; Increment the 16-bit one mili second counter
 	inc Count1ms+0    ; Increment the low 8-bits first
 	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
@@ -144,55 +142,58 @@ Timer2_ISR:
 	inc Count1ms+1
 
 Inc_Done:
+	; Checks if count1ms is 1000ms = 1sec
 	mov a, Count1ms+0
-	cjne a, #low(1000), jump_to_done ; Warning: this instruction changes the carry flag!
+	cjne a, #low(1000), Timer2_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
-	cjne a, #high(1000), jump_to_done
-	
+	cjne a, #high(1000), Timer2_ISR_done
+	clr TR0 ; Enable/disable timer/counter 0. This line creates a beep-silence-beep-silence sound.
+	; 500 milliseconds have passed.  Set a flag so the main program knows
+	setb half_seconds_flag ; Let the main program know half second had passed
+
+	cpl TR0 ; Enable/disable timer/counter 0. This line creates a beep-silence-beep-silence sound.
+
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
-	mov a, beep_counter
-	add a, #1
-	mov beep_counter, a
-	cjne a, #30, jump_to_done
-	setb reflow_time_flag
+	; Increment the BCD counter
+	mov a, sec ; seconds
+	;jnb UPDOWN, Timer2_ISR_decrement
+	add a, #0x1
+	da a
+	mov sec, a	
 	
-jump_to_done:
+;Timer2_ISR_decrement:
+	;add a, #0x99 ; Adding the 10-complement of -1 is like subtracting 1.
+	;.....
+	
+Timer2_ISR_done:
 	pop psw
 	pop acc
 	reti
 
-GeString:
-	mov R0, #buffer
-GSLoop:
-	lcall getchar
-	push acc
-	clr c
-	subb a, #10H
-	pop acc
-	jc GSDone
-	MOV @R0, A
-	inc R0
-	SJMP GSLoop
-	GSDone:
-	clr a
-	mov @R0, a
-	ret
+dseg at 0x30
+Result:     ds 2
+x:   		ds 4
+y:   		ds 4
+bcd: 		ds 5
 
+BSEG
+mf: 		dbit 1
+
+CSEG
 INIT_SPI:
-	setb MY_MISO ; Make MISO an input pin
-	clr MY_SCLK ; For mode (0,0) SCLK is zero
-	ret
+ 	setb MY_MISO ; Make MISO an input pin
+ 	clr MY_SCLK ; For mode (0,0) SCLK is zero
+ 	ret
 
 DO_SPI_G:
-	push acc
+ 	push acc
 	mov R1, #0 ; Received byte stored in R1
 	mov R2, #8 ; Loop counter (8-bits)
-	
 DO_SPI_G_LOOP:
-	mov a, R0 ; Byte to write is in R0
-	rlc a ; Carry flag has bit to write
+ 	mov a, R0 ; Byte to write is in R0
+ 	rlc a ; Carry flag has bit to write
 	mov R0, a
 	mov MY_MOSI, c
 	setb MY_SCLK ; Transmit
@@ -241,127 +242,85 @@ SendString:
     sjmp SendString
 SendStringDone:
     ret
- 
-getchar:
-	jnb RI, getchar
-	clr RI
-	mov a, SBUF
-	ret
+    
+Update_Temp:
+    clr EA
+    clr CE_ADC
+    mov R0, #00000001B
+    lcall DO_SPI_G
+    
+    mov R0, #10000000B ; Single ended, read channel 0
+    lcall DO_SPI_G
+    mov a, R1 ; R1 contains bits 8 and 9
+    anl a, #00000011B ; We need only the two least significant bits
+    mov Result+1, a ; Save result high.
+    
+    mov R0, #55H ; It doesn't matter what we transmit...
+    lcall DO_SPI_G
+    mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
+    setb CE_ADC
+    
 
-Hello_World:
-    DB  '\r', '\n', 0
+    lcall WaitHalfSec
+    
+;convert from voltage to temperature and from binary to ASCII
+    mov x+3, #0
+    mov x+2, #0
+    mov x+1, Result+1
+    mov x+0, Result+0
+    load_y (48000)
+    lcall mul32
+    load_y (1023)
+    lcall div32
+    load_y (27300)
+    lcall sub32    
+    lcall hex2bcd
+    Send_BCD(bcd+1)
+    mov a, #'.'
+    lcall putchar
+    Send_BCD(bcd)
 
+    mov DPTR, #newline
+    lcall SendString
+    setb EA
+    ret
+    
+newline:
+	DB	'\r\n',0
+
+
+;-------------------;
+;Main Program       ;
+;-------------------;
 MainProgram:
     mov SP, #7FH ; Set the stack pointer to the begining of idata
     mov PMOD, #0 ; Configure all ports in bidirectional mode
+
+;----------------------------;
+;Initialization of timers    ;
+;----------------------------;
+Timerset:
+    lcall InitSerialPort
+    lcall INIT_SPI
+    lcall Timer0_Init
+    lcall Timer2_Init
+    setb EA   ; Enable Global interrupts
+    lcall LCD_4BIT
+    ; For convenience a few handy macros are included in 'LCD_4bit.inc':
+	Set_Cursor(1, 1)
+    Send_Constant_String(#Initial_Message)
+    clr TR2
+    setb TR2
     
-	lcall InitSerialPort
-	lcall INIT_SPI
-	lcall Timer0_Init
-	lcall Timer2_Init
-	lcall LCD_4BIT
-	lcall clear_all_flags
-	mov beep_counter, #0
-	setb EA
-	clr TR2
-	lcall beep_once
-	setb TR2
-	
-Forever:
-	Set_Cursor(2,1)
-	Display_BCD(beep_counter)
-
-	clr CE_ADC
-	mov R0, #00000001B ; Start bit:1
-	lcall DO_SPI_G
-	mov R0, #10000000B ; Single ended, read channel 0
-	lcall DO_SPI_G
-	mov a, R1 ; R1 contains bits 8 and 9
-	anl a, #00000011B ; We need only the two least significant bits
-	mov Result+1, a ; Save result high.
-	mov R0, #55H ; It doesn't matter what we transmit...
-	lcall DO_SPI_G
-	mov Result, R1 ; R1 contains bits 0 to 7. Save result low.
-	setb CE_ADC
-	Wait_Milli_Seconds(#50)
-	sjmp Do_Something_With_Result
-
-	
-Do_Something_With_Result:
-	mov x+3, #0
-	mov x+2, #0
-	mov x+1, Result+1
-	mov x+0, Result+0
-	Load_y(500)
-	lcall mul32
-	Load_y(1023)
-	lcall div32
-	Load_y (273)
-	lcall sub32
-	lcall hex2bcd ; converts binary in x to BCD in bcd
-	Send_BCD (bcd)
-	mov DPTR, #Hello_World
-	lcall Sendstring
-	mov a, bcd+0
-	
-	jb soak_stage_beepdone_flag, reflow_beeeep
-	cjne a, #0x30, DONE1
-	lcall beep_once
-	setb soak_stage_beepdone_flag
-	ljmp forever
-	
-reflow_beeeep:
-	jb reflow_stage_beepdone_flag, LONG_BEEEEEEEEEEEEP
-	cjne a, #0x33, DONE1
-	lcall beep_once
-	setb reflow_stage_beepdone_flag
-	ljmp forever 
-	
-DONE1:
-	ljmp DONE
-	
-LONG_BEEEEEEEEEEEEP:
-	jb long_beep_done_flag, COOOL_BEEEEP
-	jnb reflow_time_flag, DONE1
-	BEEP_2SEC(long_beep_done_flag)
-	clr reflow_time_flag
-	ljmp forever
-
-COOOL_BEEEEP:
-	cjne a, #0x30, DONE
-	lcall beep_once
-	lcall beep_once
-	lcall beep_once
-	lcall beep_once
-	lcall beep_once
-	lcall beep_once
-	clr TR0
-	clr SOUND_OUT
-	clr long_beep_done_flag
-	ljmp forever
-	
-DONE:
-	Wait_Milli_Seconds (#200)
-	Wait_Milli_Seconds (#200)
-	Wait_Milli_Seconds (#200)
-	ljmp forever
-	
-
-	
-wait_for_P4_5:
-	jb P4.5, $ ; loop while the button is not pressed
-	Wait_Milli_Seconds(#50) ; debounce time
-	jb P4.5, wait_for_P4_5 ; it was a bounce, try again
-	jnb P4.5, $ ; loop while the button is pressed
-	ret
-	
-Display_10_digit_BCD:
-    Set_Cursor(2, 7)
-    Display_BCD(bcd+4)
-    Display_BCD(bcd+3)
-    Display_BCD(bcd+2)
-    Display_BCD(bcd+1)
-    Display_BCD(bcd+0)
-	ret
-
+	;starting value for sec and half-seconds_flag
+    mov sec, #0x00
+   
+forever:
+    Set_Cursor(1, 13)  ; the place in the LCD where we want the BCD counter value
+    Display_BCD(bcd+1) ; upper byte of bcd
+    Set_Cursor(2, 13)
+    Display_BCD(sec)
+    lcall Update_Temp
+    ljmp forever
+    
 END
