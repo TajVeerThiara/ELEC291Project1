@@ -259,12 +259,12 @@ Update_Temp:
     mov x+2, #0
     mov x+1, Result+1
     mov x+0, Result+0
-    load_y (48000)
+    load_y (5000000)
     lcall mul32
-    load_y (1023)
+    load_y (1023*41*303)
     lcall div32
-    load_y (27300)
-    lcall sub32    
+    load_y (22)
+    lcall add32    
     lcall hex2bcd
     Send_BCD(bcd+1)
     mov a, #'.'
@@ -304,6 +304,7 @@ Timerset:
 forever:
     Set_Cursor(1, 13)  ; the place in the LCD where we want the BCD counter value
     Display_BCD(bcd+1) ; upper byte of bcd
+    Display_BCD(bcd)
     Set_Cursor(2, 13)
     Display_BCD(sec)
     lcall Update_Temp
