@@ -44,14 +44,13 @@ TEMPERATURE_CHECKER mac
 	
 	mov x+3, #0
 	mov x+2, #0
-	mov x+1, bcd+1
+	mov x+1, %3
 	mov x+0, bcd+0
 	mov y+3, #0
 	mov y+2, #0
-	mov y+1, %0
-	mov y+0, %1 
-	lcall x_gteq_y
-	mov %2, mf
+	mov y+1, %1
+	mov y+0, %0
+	lcall %2
 endmac
 
 beep_once:
@@ -67,7 +66,7 @@ beep_once:
 	Wait_Milli_Seconds(#200)
 ret
 
-BEEP_2SEC mac
+BEEP_2SEC:
 	setb TR0
 	setb SOUND_OUT
 	Wait_Milli_Seconds(#200)
@@ -82,8 +81,7 @@ BEEP_2SEC mac
 	Wait_Milli_Seconds(#200)
 	clr TR0
 	clr SOUND_OUT
-	setb %0
-endmac
+ret
 ;---------------------------------;
 ; Toggles the 'E' pin in the LCD  ;
 ;---------------------------------;
@@ -302,30 +300,49 @@ CLEAR_LCD_SCREEN:
 
      Wait_Milli_Seconds(#2)
     ret
-	
+
+DISPLAY_RUN_TEMP mac
+	Set_Cursor(1, 2)
+	Display_BCD(min)
+	Set_Cursor(1, 4)
+	Send_Constant_String(#COLON_SYMBOL)
+	Set_Cursor(1, 5)
+	Display_BCD(sec)
+	Set_Cursor(1, 10)
+	Send_Constant_String(%0)
+	Set_Cursor(2, 1)
+	Send_Constant_String(#TEMP_MESSAGE)
+	Set_Cursor(2, 6)
+	Display_BCD(bcd+1)
+	Set_Cursor(2, 8)
+	Display_BCD(bcd+0)
+	Set_Cursor(2, 11)
+	Send_Constant_String(#DEGREE_SYMBOL)
+
+endmac
+
 clear_all:
+	setb SSR
 	clr mf
-	clr soak_stage_beepdone_flag
-	clr reflow_stage_beepdone_flag
-	clr reflow_time_flag
-	clr long_beep_done_flag
-	clr cool_enough_flag
+	clr STAGE1_DONE_FLAG
+	clr STAGE2_DONE_FLAG
+	clr STAGE3_DONE_FLAG
+	clr STAGE4_DONE_FLAG
+	clr STAGE5_DONE_FLAG
 	clr TERMINATION_ERROR_FLAG
-	clr TR0
+	clr EA
 	clr SOUND_OUT
-	clr TR2
+	clr PREHEAT_TIMEDONE_FLAG
+	clr REFLOW_TIMEDONE_FLAG
 	
-	mov beep_counter, #0x00
-	mov temp, #0x00
-	mov temp+1, #0x00
 	mov min, #0x00
 	mov sec, #0x00
 	mov sec_soak, #0x00
 	mov sec_REFLOW, #0x00
-	mov Soak_Temp, #0x00
-	mov Soak_Temp+1, #0x00
-	mov Reflow_Temp, #0x00
-	mov Reflow_Temp+1, #0x00
+	mov SOAK_TEMP, #0x00
+	mov SOAK_TEMP+1, #0x00
+	mov REFLOW_TEMP, #0x00
+	mov REFLOW_TEMP+1, #0x00
 	mov bcd+0, #00H
 	mov bcd+1, #00H
 	mov bcd+2, #00H
@@ -333,6 +350,8 @@ clear_all:
 	mov bcd+4, #00H
 	mov Count1ms+0, #00H
 	mov Count1ms+1, #00H
+	mov PREHEAT_TIME, #00H
+	mov REFLOW_TEMP, #00H
 	ret
 
 Display_char mac
