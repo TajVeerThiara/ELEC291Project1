@@ -51,6 +51,8 @@ SOAK_TEMP: ds 2
 REFLOW_TEMP: ds 2
 PREHEAT_TIME: ds 1
 REFLOW_TIME: ds 1
+TWO_SECONDS_COUNTER: ds 1
+EIGHT_SECONDS_COUNTER: ds 1
 
 BSEG
 mf: dbit 1
@@ -62,6 +64,7 @@ STAGE5_DONE_FLAG: dbit 1
 TERMINATION_ERROR_FLAG: dbit 1
 PREHEAT_TIMEDONE_FLAG: dbit 1
 REFLOW_TIMEDONE_FLAG: dbit 1
+TWO_SECONDS_FLAG: dbit 1
 
 CSEG
 CE_ADC EQU P2.0
@@ -180,6 +183,26 @@ Inc_Done:
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	
+	jnb TWO_SECONDS_FLAG, COUNT_EIGHT
+	mov a, TWO_SECONDS_COUNTER
+	add a, #1H
+	da a
+	mov TWO_SECONDS_COUNTER, a
+	cjne a, #2H, CONT
+	mov TWO_SECONDS_COUNTER, #0x00
+	cpl TWO_SECONDS_FLAG
+	ljmp CONT
+	
+COUNT_EIGHT:
+	mov a, EIGHT_SECONDS_COUNTER
+	add a, #1H
+	da a
+	mov EIGHT_SECONDS_COUNTER, a
+	cjne a, #8H, CONT
+	mov EIGHT_SECONDS_COUNTER, #0x00
+	cpl TWO_SECONDS_FLAG
+	
+CONT:
 	mov a, sec
 	add a, #1H
 	da a
@@ -360,6 +383,7 @@ MainProgram:
 	lcall Timer0_Init
 	lcall Timer2_Init
 	lcall CLEAR_LCD_SCREEN
+	setb TWO_SECONDS_FLAG
 	setb EA
 	clr TR2
 	lcall beep_once
@@ -403,18 +427,18 @@ Do_Something_With_Result:
 	mov x+2, #0
 	mov x+1, Result+1
 	mov x+0, Result+0              ;change these formulas
-	;load_y (5000000)
-    ;lcall mul32
-    ;load_y (1023*41*303)
-    ;lcall div32
-    ;load_y (22)
-    ;lcall ADD32
-	Load_y(500)
-	lcall mul32
-	Load_y(1023)
-	lcall div32
-	Load_y (273)
-	lcall sub32
+	load_y (5000000)
+    lcall mul32
+    load_y (1023*41*303)
+    lcall div32
+    load_y (22)
+    lcall ADD32
+	;Load_y(500)
+	;lcall mul32
+	;Load_y(1023)
+	;lcall div32
+	;Load_y (273)
+	;lcall sub32
 	lcall hex2bcd ; converts binary in x to BCD in bcd
 	Send_BCD (bcd)
 	mov DPTR, #Hello_World
@@ -426,7 +450,10 @@ STAGE1_RAMP_TO_SOAK:
 	;cjne a, #0x30, DONE1 ;change this so that it compares a current temp to the temp we want. Jumps to the appropriate SSR power on/off timing if not equal.
 	TEMPERATURE_CHECKER (SOAK_TEMP+0, SOAK_TEMP+1, x_gteq_y, bcd+1)
 	jnb mf, STAGE1_FREQUENCY   ;if mf is 0, meaning that the temperature has not reached soak temp, jump to the appropriate SSR power on/off timing
-	setb SSR
+	clr mf
+	setb TWO_SECONDS_FLAG
+	mov TWO_SECONDS_COUNTER, #0X00
+	mov EIGHT_SECONDS_COUNTER, #0x00
 	clr mf
 	lcall beep_once ;gets to here if mf is 1
 	setb STAGE1_DONE_fLAG ;once this is set, it will stay on until STOP button is pressed
@@ -437,17 +464,14 @@ STAGE2_PREHEAT_JUMPER:
 	
 STAGE1_FREQUENCY:
 	DISPLAY_RUN_TEMP(#TO_SOAK_MEESAGE)
-	clr SSR
-	Wait_Milli_Seconds(#200)	;change these timings
-	Wait_Milli_Seconds(#200)  ;*****this off time is 200+50 milliseconds. 50 ms comes from the forever loop up there
-							  ;RAMP_TO_SOAK, POWER = 100%
+	clr SSR						  ;RAMP_TO_SOAK, POWER = 100%
 	ljmp forever
 	
 STAGE2_PREHEAT:
 	jb STAGE2_DONE_FLAG, STATE3_RAMP_TO_PEAK_JUMPER
 	;cjne a, #0x33, DONE1
 	jnb PREHEAT_TIMEDONE_FLAG, STAGE2_PREHEAT_FREQUENCY
-	setb SSR
+	clr SSR
 	lcall beep_once
 	setb STAGE2_DONE_FLAG
 	ljmp forever 
@@ -457,10 +481,13 @@ STATE3_RAMP_TO_PEAK_JUMPER:
 	
 STAGE2_PREHEAT_FREQUENCY:
 	DISPLAY_RUN_TEMP(#PREHEAT_MESSAGE)
+	jb TWO_SECONDS_FLAG, TURN_SSR_ON
+	sjmp TURN_SSR_OFF
+TURN_SSR_ON:
 	clr SSR
-	Wait_Milli_Seconds(#50)	;change these timings, 50ms may be too short
+	ljmp forever
+TURN_SSR_OFF:
 	setb SSR
-	Wait_Milli_Seconds(#150)  ;*****this off time is 150+50 milliseconds. 50 ms comes from the forever loop up there
 	ljmp forever			  ;on = 50ms, off = 150+50ms, total time = 250ms. power = 1500W = 1500J/s * 50ms/250 ms = 300J/s = 20%?
 	
 STATE3_RAMP_TO_PEAK:
@@ -468,7 +495,9 @@ STATE3_RAMP_TO_PEAK:
 	TEMPERATURE_CHECKER (REFLOW_TEMP+0, REFLOW_TEMP+1, x_gteq_y, bcd+1)
 	jnb mf, STAGE3_RAMP_TO_PEAK_FREQUENCY
 	clr mf
-	setb SSR
+	setb TWO_SECONDS_FLAG
+	mov TWO_SECONDS_COUNTER, #0X00
+	mov EIGHT_SECONDS_COUNTER, #0x00
 	lcall beep_once
 	setb STAGE3_DONE_FLAG
 	ljmp forever
@@ -478,9 +507,7 @@ STAGE4_REFLOW_JUMPER:
 	
 STAGE3_RAMP_TO_PEAK_FREQUENCY:
 	DISPLAY_RUN_TEMP(#TO_PEAK_MESSAGE)
-	clr SSR
-	Wait_Milli_Seconds(#200)	;change these timings
-	Wait_Milli_Seconds(#200)  ;*****this off time is 200+50 milliseconds. 50 ms comes from the forever loop up there ;power = 100%
+	clr SSR	;change these timings  ;*****this off time is 200+50 milliseconds. 50 ms comes from the forever loop up there ;power = 100%
 	ljmp forever
 	
 STAGE4_REFLOW:
@@ -502,17 +529,18 @@ CHECK_OVERHEAT:
 	
 STAGE4_REFLOW_FREQUENCY:
 	DISPLAY_RUN_TEMP(#REFLOW_MESSAGE)
+	jb TWO_SECONDS_FLAG, TURN_SSR_ON1
+	sjmp TURN_SSR_OFF1
+TURN_SSR_ON1:
 	clr SSR
-	Wait_Milli_Seconds(#50)	;change these timings, 50ms may be too short
+	ljmp forever
+TURN_SSR_OFF1:
 	setb SSR
-	Wait_Milli_Seconds(#150)  ;*****this off time is 200+50 milliseconds. 50 ms comes from the forever loop up there
-	ljmp forever			  ;on = 50ms, off = 150+50ms, total time = 250ms. power = J/s = 1500J/s * 50ms/250 ms = 300J/s = 20%?
+	ljmp forever	  ;on = 50ms, off = 150+50ms, total time = 250ms. power = J/s = 1500J/s * 50ms/250 ms = 300J/s = 20%?
 
 OVERHEAT_FREQUENCY:
 	DISPLAY_RUN_TEMP(#REFLOW_MESSAGE)
-	setb SSR
-	Wait_Milli_Seconds(#200)
-	Wait_Milli_Seconds(#200)		;power = 0% when temp >= 232
+	setb SSR	;power = 0% when temp >= 232
 	ljmp forever
 	
 STAGE5_COOLING:
@@ -534,11 +562,6 @@ STAGE5_COOLING:
 STAGE5_COOLING_FREQUENCY:
 	DISPLAY_RUN_TEMP(#COOLING_MESSAGE)
 	setb SSR								;power = 0%
-	Wait_Milli_Seconds (#200)
-	Wait_Milli_Seconds (#200)
-	Wait_Milli_Seconds (#200)
-	Wait_Milli_Seconds (#200)
-	Wait_Milli_Seconds (#200)
 	ljmp forever
 
 END

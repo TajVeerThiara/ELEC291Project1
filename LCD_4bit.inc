@@ -39,6 +39,25 @@ L1: djnz R0, L1 ; 3 cycles->3*45.21123ns*166=22.51519us
     pop AR1
     pop AR0
     ret
+	
+Wait_5Milli_Seconds mac
+	push AR2
+	mov R2, %0
+	lcall ?Wait_5Milli_Seconds
+	pop AR2
+endmac
+
+?Wait_5Milli_Seconds:
+	push AR0
+	push AR1
+L6: mov R1, #(45*5)
+L5: mov R0, #166
+L4: djnz R0, L4 ; 3 cycles->3*45.21123ns*166=22.51519us
+    djnz R1, L5 ; 22.51519us*45=1.013ms
+    djnz R2, L6 ; number of millisecons to wait passed in R2
+    pop AR1
+    pop AR0
+    ret
 
 TEMPERATURE_CHECKER mac
 	
