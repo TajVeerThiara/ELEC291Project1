@@ -344,11 +344,6 @@ clear_all:
 
 	setb SSR
 	clr mf
-	clr STAGE1_DONE_FLAG
-	clr STAGE2_DONE_FLAG
-	clr STAGE3_DONE_FLAG
-	clr STAGE4_DONE_FLAG
-	clr STAGE5_DONE_FLAG
 	clr TERMINATION_ERROR_FLAG
 	clr EA
 	clr SOUND_OUT
@@ -356,6 +351,7 @@ clear_all:
 	clr REFLOW_TIMEDONE_FLAG
 	clr SSR_ON_OFF_FLAG
 	
+	mov state, #0
 	mov min, #0x00
 	mov sec, #0x00
 	mov sec_soak, #0x00
