@@ -217,7 +217,7 @@ CONT:
 	cjne a, #01H, continuee
 	mov a, sec
 	cjne a, #00H, continuee
-	TEMPERATURE_CHECKER(#20H, #00H, x_lteq_y, #00H)	;if in the first 50s temp <= 50, abort reflow process
+	TEMPERATURE_CHECKER(#50H, #00H, x_lteq_y, #00H)	;if in the first 50s temp <= 50, abort reflow process
 	jnb mf, continuee
 	clr mf
 	setb TERMINATION_ERROR_FLAG
@@ -327,11 +327,11 @@ STARTTTT:
 	Set_Cursor(1, 5)
 	Send_Constant_String(#WELCOME_MEESAGE)
 	mov SOAK_TEMP+1, #01H
-	mov SOAK_TEMP+0, #30H
+	mov SOAK_TEMP+0, #50H
 	mov REFLOW_TEMP+1, #02H
 	mov REFLOW_TEMP+0, #00H
-	mov sec_REFLOW, #25H
-	mov sec_soak, #50H
+	mov sec_REFLOW, #30H
+	mov sec_soak, #65H
 	
 SETTINGS:
 
@@ -344,7 +344,7 @@ ljmp MainProgram
 PB_SEC_SOAK:
 PB_MACROO (SOAK_SEC_BUTTON, PB_SOAK_TEMP, sec_soak, #00H, #00H, #90H, DISPLAY_SOAK_PROFILE)
 jnb mf, SETTINGS1
-mov sec_soak, #50H
+mov sec_soak, #65H
 clr mf
 ljmp SETTINGS
 ;0.pushbutton 1.jump to if not pushed 2. x+0 and parameter to increment 3.x+1 4. y+1 5. y+0 6. display
@@ -352,7 +352,7 @@ ljmp SETTINGS
 PB_SOAK_TEMP:
 PB_MACROO (SOAK_TEMP_BUTTON, PB_SEC_REFLOW, SOAK_TEMP, SOAK_TEMP+1, #01H, #70H, DISPLAY_SOAK_PROFILE)
 jnb mf, SETTINGS1
-mov SOAK_TEMP+0, #30H
+mov SOAK_TEMP+0, #50H
 mov SOAK_TEMP+1, #01H
 clr mf
 ljmp SETTINGS
@@ -363,7 +363,7 @@ SETTINGS1:
 PB_SEC_REFLOW:	
 PB_MACROO (REFLOW_SEC_BUTTON, PB_REFLOW_TEMP, sec_REFLOW, #00H, #00H, #45H, DISPLAY_REFLOW_PROFILE)
 jnb mf, SETTINGS1
-mov sec_REFLOW, #25H
+mov sec_REFLOW, #30H
 clr mf
 ljmp SETTINGS
 
@@ -402,8 +402,8 @@ ABORT_PROCESS:
 	Set_Cursor(2, 1)
 	Send_Constant_String(#PROGRAM_STOPPED2)
 	lcall BEEP_2SEC
-	lcall clear_all
-	sjmp $
+	setb SSR
+	ljmp SETTINGS
 
 CONTINUE_PROGRAM:	
 	clr CE_ADC
@@ -454,7 +454,6 @@ STAGE1_RAMP_TO_SOAK:
 	setb TWO_SECONDS_FLAG
 	mov TWO_SECONDS_COUNTER, #0X00
 	mov EIGHT_SECONDS_COUNTER, #0x00
-	clr mf
 	lcall beep_once ;gets to here if mf is 1
 	setb STAGE1_DONE_fLAG ;once this is set, it will stay on until STOP button is pressed
 	ljmp forever
@@ -471,7 +470,10 @@ STAGE2_PREHEAT:
 	jb STAGE2_DONE_FLAG, STATE3_RAMP_TO_PEAK_JUMPER
 	;cjne a, #0x33, DONE1
 	jnb PREHEAT_TIMEDONE_FLAG, STAGE2_PREHEAT_FREQUENCY
-	clr SSR
+	clr mf
+	setb TWO_SECONDS_FLAG
+	mov TWO_SECONDS_COUNTER, #0X00
+	mov EIGHT_SECONDS_COUNTER, #0x00
 	lcall beep_once
 	setb STAGE2_DONE_FLAG
 	ljmp forever 
@@ -507,13 +509,22 @@ STAGE4_REFLOW_JUMPER:
 	
 STAGE3_RAMP_TO_PEAK_FREQUENCY:
 	DISPLAY_RUN_TEMP(#TO_PEAK_MESSAGE)
-	clr SSR	;change these timings  ;*****this off time is 200+50 milliseconds. 50 ms comes from the forever loop up there ;power = 100%
+	jb TWO_SECONDS_FLAG, TURN_SSR_ON2
+	sjmp TURN_SSR_OFF2
+TURN_SSR_ON2:
+	setb SSR
 	ljmp forever
-	
+TURN_SSR_OFF2:
+	clr SSR
+	ljmp forever;change these timings  ;*****this off time is 200+50 milliseconds. 50 ms comes from the forever loop up there ;power = 100%
+
 STAGE4_REFLOW:
 	jb STAGE4_DONE_FLAG, STAGE5_COOLING_JUMPER
 	jnb REFLOW_TIMEDONE_FLAG, CHECK_OVERHEAT
-	setb SSR
+	setb TWO_SECONDS_FLAG
+	mov TWO_SECONDS_COUNTER, #0X00
+	mov EIGHT_SECONDS_COUNTER, #0x00
+	clr mf
 	lcall BEEP_2SEC
 	setb STAGE4_DONE_FLAG
 	ljmp forever
@@ -554,8 +565,6 @@ STAGE5_COOLING:
 	lcall beep_once
 	lcall beep_once
 	clr mf
-	clr TR0
-	clr SOUND_OUT
 	setb STAGE5_DONE_FLAG
 	ljmp forever
 	

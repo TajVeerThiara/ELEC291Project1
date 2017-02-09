@@ -353,6 +353,7 @@ clear_all:
 	clr SOUND_OUT
 	clr PREHEAT_TIMEDONE_FLAG
 	clr REFLOW_TIMEDONE_FLAG
+	clr TWO_SECONDS_FLAG
 	
 	mov min, #0x00
 	mov sec, #0x00
@@ -371,6 +372,8 @@ clear_all:
 	mov Count1ms+1, #00H
 	mov PREHEAT_TIME, #00H
 	mov REFLOW_TEMP, #00H
+	mov TWO_SECONDS_COUNTER, #00H
+	mov EIGHT_SECONDS_COUNTER, #00H
 	ret
 
 Display_char mac
