@@ -469,9 +469,13 @@ Do_Something_With_Result:
 	SUBB A, ON_TIME
 	mov OFF_TIME, A
 	;mov a, bcd+0
+	sjmp STAGE1_RAMP_TO_SOAK
+	
+STAGE2_PREHEAT_JUMPER:
+	ljmp STAGE2_PREHEAT
 	
 STAGE1_RAMP_TO_SOAK:
-	jb STAGE1_DONE_fLAG, STAGE2_PREHEAT ;will make a macro for the this one and the ones repeated
+	jb STAGE1_DONE_fLAG, STAGE2_PREHEAT_JUMPER ;will make a macro for the this one and the ones repeated
 	;cjne a, #0x30, DONE1 ;change this so that it compares a current temp to the temp we want. Jumps to the appropriate SSR power on/off timing if not equal.
 	TEMPERATURE_CHECKER (SOAK_TEMP+0, SOAK_TEMP+1, x_gteq_y, bcd+1)
 	mov pwm, #100
@@ -483,61 +487,69 @@ STAGE1_RAMP_TO_SOAK:
 	mov OFF_TIME_COUNTER, #0x00
 	lcall beep_once ;gets to here if mf is 1
 	setb STAGE1_DONE_fLAG ;once this is set, it will stay on until STOP button is pressed
-	ljmp forever
-	
 forever_jumper:
 	ljmp forever
+
+	
+STATE3_RAMP_TO_PEAK_JUMPER:
+	ljmp STATE3_RAMP_TO_PEAK
 	
 STAGE2_PREHEAT:
-	jb STAGE2_DONE_FLAG, STATE3_RAMP_TO_PEAK
+	jb STAGE2_DONE_FLAG, STATE3_RAMP_TO_PEAK_JUMPER
 	;cjne a, #0x33, DONE1
 	mov pwm, #20
 	DISPLAY_RUN_TEMP(#PREHEAT_MESSAGE)
-	jnb PREHEAT_TIMEDONE_FLAG, forever_jumper
+	jnb PREHEAT_TIMEDONE_FLAG, forever_jumper1
 	clr mf
 	setb SSR_ON_OFF_FLAG
 	mov ON_TIME_COUNTER, #0x00
 	mov OFF_TIME_COUNTER, #0x00
 	lcall beep_once
 	setb STAGE2_DONE_FLAG
+forever_jumper1:
 	ljmp forever 
+
+STAGE4_REFLOW_JUMPER:
+	ljmp STAGE4_REFLOW
 	
 STATE3_RAMP_TO_PEAK:
-	jb STAGE3_DONE_FLAG, STAGE4_REFLOW
+	jb STAGE3_DONE_FLAG, STAGE4_REFLOW_JUMPER
 	mov pwm, #100
 	TEMPERATURE_CHECKER (REFLOW_TEMP+0, REFLOW_TEMP+1, x_gteq_y, bcd+1)
 	DISPLAY_RUN_TEMP(#TO_PEAK_MESSAGE)
-	jnb mf, forever_jumper
+	jnb mf, forever_jumper2
 	clr mf
 	setb SSR_ON_OFF_FLAG
 	mov ON_TIME_COUNTER, #0x00
 	mov OFF_TIME_COUNTER, #0x00
 	lcall beep_once
 	setb STAGE3_DONE_FLAG
+forever_jumper2:
 	ljmp forever
+	
+STAGE5_COOLING_JUMPER:
+	ljmp STAGE5_COOLING
 
 STAGE4_REFLOW:
-	jb STAGE4_DONE_FLAG, STAGE5_COOLING
+	jb STAGE4_DONE_FLAG, STAGE5_COOLING_JUMPER
 	mov pwm, #20
 	DISPLAY_RUN_TEMP(#REFLOW_MESSAGE)
-	jnb REFLOW_TIMEDONE_FLAG, forever_jumper2
+	jnb REFLOW_TIMEDONE_FLAG, forever_jumper3
 	clr mf
 	setb SSR_ON_OFF_FLAG
 	mov ON_TIME_COUNTER, #0x00
 	mov OFF_TIME_COUNTER, #0x00
 	lcall BEEP_2SEC
 	setb STAGE4_DONE_FLAG
-	ljmp forever
-
-forever_jumper2:
+forever_jumper3:
 	ljmp forever
 	
 STAGE5_COOLING:
 	DISPLAY_RUN_TEMP(#COOLING_MESSAGE)
-	jb STAGE5_DONE_FLAG, forever_jumper2
+	jb STAGE5_DONE_FLAG, forever_jumper4
 	mov pwm, #0
 	TEMPERATURE_CHECKER (#30H, #0, x_lteq_y, #0) ;if temp <= 30, beep six times
-	jnb mf, forever_jumper2
+	jnb mf, forever_jumper4
 	lcall beep_once
 	lcall beep_once
 	lcall beep_once
@@ -546,6 +558,7 @@ STAGE5_COOLING:
 	lcall beep_once
 	clr mf
 	setb STAGE5_DONE_FLAG
+forever_jumper4:
 	ljmp forever
 
 END
