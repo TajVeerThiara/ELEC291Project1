@@ -475,6 +475,7 @@ STAGE1_RAMP_TO_SOAK:
 	;cjne a, #0x30, DONE1 ;change this so that it compares a current temp to the temp we want. Jumps to the appropriate SSR power on/off timing if not equal.
 	TEMPERATURE_CHECKER (SOAK_TEMP+0, SOAK_TEMP+1, x_gteq_y, bcd+1)
 	mov pwm, #100
+	DISPLAY_RUN_TEMP(#TO_SOAK_MEESAGE)
 	jnb mf, forever_jumper   ;if mf is 0, meaning that the temperature has not reached soak temp, jump to the appropriate SSR power on/off timing
 	clr mf
 	setb SSR_ON_OFF_FLAG
@@ -491,6 +492,7 @@ STAGE2_PREHEAT:
 	jb STAGE2_DONE_FLAG, STATE3_RAMP_TO_PEAK
 	;cjne a, #0x33, DONE1
 	mov pwm, #20
+	DISPLAY_RUN_TEMP(#PREHEAT_MESSAGE)
 	jnb PREHEAT_TIMEDONE_FLAG, forever_jumper
 	clr mf
 	setb SSR_ON_OFF_FLAG
@@ -504,6 +506,7 @@ STATE3_RAMP_TO_PEAK:
 	jb STAGE3_DONE_FLAG, STAGE4_REFLOW
 	mov pwm, #100
 	TEMPERATURE_CHECKER (REFLOW_TEMP+0, REFLOW_TEMP+1, x_gteq_y, bcd+1)
+	DISPLAY_RUN_TEMP(#TO_PEAK_MESSAGE)
 	jnb mf, forever_jumper
 	clr mf
 	setb SSR_ON_OFF_FLAG
@@ -516,6 +519,7 @@ STATE3_RAMP_TO_PEAK:
 STAGE4_REFLOW:
 	jb STAGE4_DONE_FLAG, STAGE5_COOLING
 	mov pwm, #20
+	DISPLAY_RUN_TEMP(#REFLOW_MESSAGE)
 	jnb REFLOW_TIMEDONE_FLAG, forever_jumper2
 	clr mf
 	setb SSR_ON_OFF_FLAG
@@ -529,6 +533,7 @@ forever_jumper2:
 	ljmp forever
 	
 STAGE5_COOLING:
+	DISPLAY_RUN_TEMP(#COOLING_MESSAGE)
 	jb STAGE5_DONE_FLAG, forever_jumper2
 	mov pwm, #0
 	TEMPERATURE_CHECKER (#30H, #0, x_lteq_y, #0) ;if temp <= 30, beep six times
