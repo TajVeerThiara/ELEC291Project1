@@ -56,6 +56,7 @@ OFF_TIME: ds 1
 ON_TIME_COUNTER: ds 1
 OFF_TIME_COUNTER: ds 1
 pwm: ds 1
+CORRECTED_TEMP: ds 1
 
 BSEG
 mf: dbit 1
@@ -109,7 +110,7 @@ PROGRAM_STOPPED2: db	  'STOPPED!', 0
 WELCOME_MEESAGE: db		  'WELCOME!', 0
  
 $NOLIST
-$include(LCD_4bit.inc)
+$include(project1_macro.inc)
 $include(math32.inc)
 $LIST
 
@@ -185,6 +186,14 @@ Inc_Done:
 	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
+
+	mov B, #10
+	mov A, pwm
+	DIV AB
+	mov ON_TIME, A
+	mov A, #10
+	SUBB A, ON_TIME
+	mov OFF_TIME, A
 	
 	jb STAGE4_DONE_FLAG, TURN_SSR_OFF
 	sjmp NOT_ZERO_POWER
@@ -235,7 +244,7 @@ CONT:
 	cjne a, #01H, continuee
 	mov a, sec
 	cjne a, #00H, continuee
-	TEMPERATURE_CHECKER(#50H, #00H, x_lteq_y, #00H)	;if in the first 50s temp <= 50, abort reflow process
+	TEMPERATURE_CHECKER(#50H, #00H, x_lteq_y)	;if in the first 60s temp <= 50, abort reflow process
 	jnb mf, continuee
 	clr mf
 	setb TERMINATION_ERROR_FLAG
@@ -445,9 +454,9 @@ Do_Something_With_Result:
 	mov x+2, #0
 	mov x+1, Result+1
 	mov x+0, Result+0              ;change these formulas
-	load_y (5000000)
+	load_y (4998951)
     lcall mul32
-    load_y (1023*41*303)
+    load_y (1023*41*367)
     lcall div32
     load_y (22)
     lcall ADD32
@@ -461,13 +470,6 @@ Do_Something_With_Result:
 	Send_BCD (bcd)
 	mov DPTR, #Hello_World
 	lcall Sendstring
-	mov B, #10
-	mov A, pwm
-	DIV AB
-	mov ON_TIME, A
-	mov A, #10
-	SUBB A, ON_TIME
-	mov OFF_TIME, A
 	;mov a, bcd+0
 	sjmp STAGE1_RAMP_TO_SOAK
 	
@@ -477,15 +479,15 @@ STAGE2_PREHEAT_JUMPER:
 STAGE1_RAMP_TO_SOAK:
 	jb STAGE1_DONE_fLAG, STAGE2_PREHEAT_JUMPER ;will make a macro for the this one and the ones repeated
 	;cjne a, #0x30, DONE1 ;change this so that it compares a current temp to the temp we want. Jumps to the appropriate SSR power on/off timing if not equal.
-	TEMPERATURE_CHECKER (SOAK_TEMP+0, SOAK_TEMP+1, x_gteq_y, bcd+1)
+	TEMPERATURE_CHECKER (SOAK_TEMP+0, SOAK_TEMP+1, x_gteq_y)
 	mov pwm, #100
-	DISPLAY_RUN_TEMP(#TO_SOAK_MEESAGE)
+	DISPLAY_RUN_TEMP(#TO_SOAK_MEESAGE, #1)
 	jnb mf, forever_jumper   ;if mf is 0, meaning that the temperature has not reached soak temp, jump to the appropriate SSR power on/off timing
+	lcall beep_once ;gets to here if mf is 1
 	clr mf
 	setb SSR_ON_OFF_FLAG
 	mov ON_TIME_COUNTER, #0x00
 	mov OFF_TIME_COUNTER, #0x00
-	lcall beep_once ;gets to here if mf is 1
 	setb STAGE1_DONE_fLAG ;once this is set, it will stay on until STOP button is pressed
 forever_jumper:
 	ljmp forever
@@ -497,8 +499,8 @@ STATE3_RAMP_TO_PEAK_JUMPER:
 STAGE2_PREHEAT:
 	jb STAGE2_DONE_FLAG, STATE3_RAMP_TO_PEAK_JUMPER
 	;cjne a, #0x33, DONE1
-	mov pwm, #20
-	DISPLAY_RUN_TEMP(#PREHEAT_MESSAGE)
+	mov pwm, #30
+	DISPLAY_RUN_TEMP(#PREHEAT_MESSAGE, #0)
 	jnb PREHEAT_TIMEDONE_FLAG, forever_jumper1
 	clr mf
 	setb SSR_ON_OFF_FLAG
@@ -515,8 +517,8 @@ STAGE4_REFLOW_JUMPER:
 STATE3_RAMP_TO_PEAK:
 	jb STAGE3_DONE_FLAG, STAGE4_REFLOW_JUMPER
 	mov pwm, #100
-	TEMPERATURE_CHECKER (REFLOW_TEMP+0, REFLOW_TEMP+1, x_gteq_y, bcd+1)
-	DISPLAY_RUN_TEMP(#TO_PEAK_MESSAGE)
+	TEMPERATURE_CHECKER (REFLOW_TEMP+0, REFLOW_TEMP+1, x_gteq_y)
+	DISPLAY_RUN_TEMP(#TO_PEAK_MESSAGE, #0)
 	jnb mf, forever_jumper2
 	clr mf
 	setb SSR_ON_OFF_FLAG
@@ -532,8 +534,8 @@ STAGE5_COOLING_JUMPER:
 
 STAGE4_REFLOW:
 	jb STAGE4_DONE_FLAG, STAGE5_COOLING_JUMPER
-	mov pwm, #20
-	DISPLAY_RUN_TEMP(#REFLOW_MESSAGE)
+	mov pwm, #30
+	DISPLAY_RUN_TEMP(#REFLOW_MESSAGE, #0)
 	jnb REFLOW_TIMEDONE_FLAG, forever_jumper3
 	clr mf
 	setb SSR_ON_OFF_FLAG
@@ -545,10 +547,10 @@ forever_jumper3:
 	ljmp forever
 	
 STAGE5_COOLING:
-	DISPLAY_RUN_TEMP(#COOLING_MESSAGE)
+	DISPLAY_RUN_TEMP(#COOLING_MESSAGE, #0)
 	jb STAGE5_DONE_FLAG, forever_jumper4
 	mov pwm, #0
-	TEMPERATURE_CHECKER (#30H, #0, x_lteq_y, #0) ;if temp <= 30, beep six times
+	TEMPERATURE_CHECKER (#30H, #0, x_lteq_y) ;if temp <= 30, beep six times
 	jnb mf, forever_jumper4
 	lcall beep_once
 	lcall beep_once
