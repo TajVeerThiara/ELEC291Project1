@@ -347,6 +347,7 @@ endmac
 clear_all:
 
 	setb SSR
+	setb HOT_SURFACE_INDICATOR
 	clr STAGE1_DONE_FLAG
 	clr STAGE2_DONE_FLAG
 	clr STAGE3_DONE_FLAG
@@ -360,6 +361,7 @@ clear_all:
 	clr REFLOW_TIMEDONE_FLAG
 	clr SSR_ON_OFF_FLAG
 	
+	mov REFLOW_TIME, #0x00
 	mov min, #0x00
 	mov sec, #0x00
 	mov sec_soak, #0x00
