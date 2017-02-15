@@ -4,6 +4,9 @@ import matplotlib.animation as animation
 import sys, time, math
 import time
 import serial
+from matplotlib import style
+
+style.use("ggplot")
 
 
 # configure the serial port
@@ -16,7 +19,7 @@ ser = serial.Serial(
 )
 ser.isOpen()
 
-xsize=1200
+xsize=500
    
 def data_gen():
     t = data_gen.t
@@ -45,13 +48,17 @@ data_gen.t = -1
 fig = plt.figure()
 fig.canvas.mpl_connect('close_event', on_close_figure)
 ax = fig.add_subplot(111)
-line, = ax.plot([], [], lw=2)
+line, = ax.plot([], [], color = 'green', lw=2)
 ax.set_ylim(0, 250)
 ax.set_xlim(0, xsize)
+ax.set_xlabel('Time(seconds)')
+ax.set_ylabel('Temperature(C)')
+ax.set_title('Reflow Soldering Profile')
+
 ax.grid()
 xdata, ydata = [], []
 
 # Important: Although blit=True makes graphing faster, we need blit=False to prevent
 # spurious lines to appear when resizing the stripchart.
-ani = animation.FuncAnimation(fig, run, data_gen, blit=False, interval=100, repeat=False)
+ani = animation.FuncAnimation(fig, run, data_gen, blit=False, interval=1000, repeat=False)
 plt.show()
